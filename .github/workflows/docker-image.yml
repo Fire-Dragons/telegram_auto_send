@@ -72,7 +72,6 @@ jobs:
           provenance: false
           sbom: false
 
-      # 核心修复：完善if条件，同时检查run_test和密钥是否存在
       - name: Test Docker image
         # 条件：手动触发且run_test=true 且 所有测试密钥都存在；或自动触发且密钥存在
         if: ${{ 
