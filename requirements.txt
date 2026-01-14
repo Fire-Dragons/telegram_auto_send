@@ -1,9 +1,11 @@
-python-telegram-bot==13.7
-Pyrogram==2.0.106
-apscheduler==3.10.4
-python-dotenv==1.0.0
-Flask==2.3.3
-requests==2.31.0
-pycryptodome==3.19.0
-python-magic==0.4.27
-pillow==10.1.0
+# 核心依赖（升级到最新稳定版）
+python-telegram-bot==20.7          # 替代旧版13.7，支持更多Telegram API特性
+Pyrogram==2.0.106                  # 最新稳定版
+apscheduler==3.10.4                # 最新稳定版
+python-dotenv==1.0.1               # 最新稳定版
+Flask==2.3.3                       # 最新稳定版
+gunicorn==21.2.0                   # 生产环境WSGI服务器（最新稳定版）
+requests==2.31.0                   # 最新稳定版
+pycryptodome==3.20.0               # 加密依赖（最新稳定版）
+python-magic==0.4.27               # 文件类型识别（最新稳定版）
+pillow==10.1.0                     # 图片处理（最新稳定版）

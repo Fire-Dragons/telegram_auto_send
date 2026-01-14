@@ -1,5 +1,5 @@
 # 阶段1：构建依赖
-FROM python:3.9-slim as builder
+FROM python:3.11-slim as builder
 
 WORKDIR /app
 
@@ -10,12 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
+# 配置国内PyPI源加速依赖安装
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
 # 安装Python依赖（生成wheel包，减小最终镜像体积）
 COPY requirements.txt .
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt
 
 # 阶段2：生成最终镜像
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -41,5 +44,5 @@ RUN mkdir -p /app/data/user_sessions /app/data/user_media /app/data/logs \
 # 暴露端口
 EXPOSE 5000
 
-# 启动命令（用gunicorn替代flask内置服务器，生产环境更稳定）
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# 启动命令（gunicorn最新版）
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]

@@ -1,85 +1,115 @@
-name: Build and Push Docker Image (Docker Hub Only)
+name: Build and Push Docker Image (Latest Dependencies)
 
-# 触发条件：推送到main分支、创建标签、手动触发
+# 触发条件：手动+自动
 on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker镜像标签（如 latest、v1.0.0、test）'
+        required: true
+        default: 'latest'
+        type: string
+      run_test:
+        description: '构建后是否运行镜像测试？'
+        required: true
+        default: true
+        type: boolean
+      build_platform:
+        description: '选择构建的架构'
+        required: true
+        type: choice
+        options:
+          - linux/amd64
+          - linux/arm64
+          - linux/amd64,linux/arm64
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]  # 标签以v开头时触发（如v1.0.0）
-  workflow_dispatch:  # 允许手动触发
+    branches: [ "main" ]
+    tags: [ 'v*' ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 步骤1：拉取代码
+      # 步骤1：拉取代码（最新版）
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 步骤2：设置Docker Buildx（支持多架构构建）
+      # 步骤2：设置Docker Buildx（最新版，支持多架构）
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          version: latest  # 使用最新版Buildx
 
-      # 步骤3：登录Docker Hub（核心步骤）
+      # 步骤3：登录Docker Hub（最新版）
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      # 步骤4：设置镜像标签（区分分支/标签）
+      # 步骤4：设置镜像标签
       - name: Set image tags
         id: set_tags
         run: |
-          # 基础标签：Docker Hub用户名/镜像名（自定义）
           BASE_TAG="${{ secrets.DOCKER_HUB_USERNAME }}/telegram-bot"
           
-          # 如果是标签推送，添加版本标签；否则用latest
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            TAG=${GITHUB_REF#refs/tags/}
-            echo "tags=${BASE_TAG}:${TAG},${BASE_TAG}:latest" >> $GITHUB_OUTPUT
+          # 区分手动/自动触发
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
           else
-            echo "tags=${BASE_TAG}:latest" >> $GITHUB_OUTPUT
+            TAG="latest"
           fi
+          
+          echo "tags=${BASE_TAG}:${TAG}" >> $GITHUB_OUTPUT
+          echo "platforms=${{ github.event.inputs.build_platform || 'linux/amd64,linux/arm64' }}" >> $GITHUB_OUTPUT
 
-      # 步骤5：构建并推送镜像（核心步骤）
+      # 步骤5：构建并推送镜像（最新版，支持缓存优化）
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true  # 推送到Docker Hub（false则仅构建不推送）
+          push: true
           tags: ${{ steps.set_tags.outputs.tags }}
-          cache-from: type=registry,ref=${{ steps.set_tags.outputs.tags }}
-          cache-to: type=inline  # 缓存构建层，加速下次构建
-          platforms: linux/amd64,linux/arm64  # 构建多架构镜像（x86/ARM）
-          pull: true  # 拉取最新基础镜像
+          platforms: ${{ steps.set_tags.outputs.platforms }}
+          # 高级缓存配置（加速构建）
+          cache-from: type=registry,ref=${{ steps.set_tags.outputs.tags }}:buildcache
+          cache-to: type=registry,ref=${{ steps.set_tags.outputs.tags }}:buildcache,mode=max
+          # 构建优化
+          pull: true
+          provenance: false  # 关闭溯源，减小镜像体积
+          sbom: false
 
-      # 步骤6：（可选）镜像测试（启动容器验证可用性）
-      # - name: Test Docker image
-      #   if: ${{ secrets.BOT_TOKEN != '' && secrets.API_ID != '' && secrets.API_HASH != '' }}
-      #   run: |
-      #     # 启动测试容器
-      #     docker run -d \
-      #       --name telegram-bot-test \
-      #       -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
-      #       -e API_ID=${{ secrets.API_ID }} \
-      #       -e API_HASH=${{ secrets.API_HASH }} \
-      #       -e DOMAIN="https://test.example.com" \
-      #       -p 5000:5000 \
-      #       ${{ steps.set_tags.outputs.tags }}
+      # 步骤6：镜像测试（可选）
+      - name: Test Docker image
+        if: ${{ (github.event.inputs.run_test == 'true' && github.event_name == 'workflow_dispatch') || (github.event_name != 'workflow_dispatch' && secrets.BOT_TOKEN != '') }}
+        run: |
+          # 启动测试容器
+          docker run -d \
+            --name telegram-bot-test \
+            -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
+            -e API_ID=${{ secrets.API_ID }} \
+            -e API_HASH=${{ secrets.API_HASH }} \
+            -e DOMAIN="https://test.example.com" \
+            -p 5000:5000 \
+            ${{ steps.set_tags.outputs.tags }}
           
-      #     # 等待容器启动
-      #     sleep 10
+          # 等待容器启动
+          sleep 15
           
-      #     # 验证容器是否运行
-      #     CONTAINER_STATUS=$(docker inspect -f '{{.State.Running}}' telegram-bot-test 2>/dev/null || "false")
-      #     if [ "$CONTAINER_STATUS" != "true" ]; then
-      #       echo "❌ 容器启动失败，日志如下："
-      #       docker logs telegram-bot-test || echo "无日志输出"
-      #       exit 1
-      #     fi
+          # 验证容器状态
+          CONTAINER_STATUS=$(docker inspect -f '{{.State.Running}}' telegram-bot-test 2>/dev/null || "false")
+          if [ "$CONTAINER_STATUS" != "true" ]; then
+            echo "❌ 容器启动失败，日志："
+            docker logs telegram-bot-test || echo "无日志"
+            exit 1
+          fi
           
-      #     echo "✅ 容器启动成功，测试通过"
+          # 验证服务可用性
+          curl -f http://localhost:5000/login || (echo "❌ 服务不可用" && exit 1)
           
-      #     # 清理测试容器
-      #     docker stop telegram-bot-test >/dev/null 2>&1
-      #     docker rm telegram-bot-test >/dev/null 2>&1
+          echo "✅ 镜像测试通过"
+          
+          # 清理容器
+          docker stop telegram-bot-test && docker rm telegram-bot-test
