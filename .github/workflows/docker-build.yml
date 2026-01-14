@@ -1,4 +1,4 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Image (Docker Hub Only)
 
 # 触发条件：推送到main分支、创建标签、手动触发
 on:
@@ -19,51 +19,43 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 步骤3：登录Docker Hub（可选，推送至Docker Hub）
+      # 步骤3：登录Docker Hub（核心步骤）
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      # 步骤4：登录阿里云容器仓库（可选，二选一或都推送）
-      - name: Login to Aliyun Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.ALIYUN_REGISTRY }}
-          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
-          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-
-      # 步骤5：设置镜像标签（区分分支/标签）
+      # 步骤4：设置镜像标签（区分分支/标签）
       - name: Set image tags
         id: set_tags
         run: |
-          # 基础标签：用户名/仓库名
-          BASE_TAG="your-docker-username/telegram-bot"
-          # 阿里云标签：仓库地址/命名空间/镜像名
-          ALIYUN_TAG="${{ secrets.ALIYUN_REGISTRY }}/your-namespace/telegram-bot"
+          # 基础标签：Docker Hub用户名/镜像名（自定义）
+          BASE_TAG="${{ secrets.DOCKER_HUB_USERNAME }}/telegram-bot"
           
           # 如果是标签推送，添加版本标签；否则用latest
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             TAG=${GITHUB_REF#refs/tags/}
-            echo "tags=${BASE_TAG}:${TAG},${BASE_TAG}:latest,${ALIYUN_TAG}:${TAG},${ALIYUN_TAG}:latest" >> $GITHUB_OUTPUT
+            echo "tags=${BASE_TAG}:${TAG},${BASE_TAG}:latest" >> $GITHUB_OUTPUT
           else
-            echo "tags=${BASE_TAG}:latest,${ALIYUN_TAG}:latest" >> $GITHUB_OUTPUT
+            echo "tags=${BASE_TAG}:latest" >> $GITHUB_OUTPUT
           fi
 
-      # 步骤6：构建并推送镜像
+      # 步骤5：构建并推送镜像（核心步骤）
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true  # 推送到仓库（false则仅构建不推送）
+          push: true  # 推送到Docker Hub（false则仅构建不推送）
           tags: ${{ steps.set_tags.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.set_tags.outputs.tags }}
           cache-to: type=inline  # 缓存构建层，加速下次构建
-          platforms: linux/amd64,linux/arm64  # 构建多架构镜像（适配x86/ARM服务器）
+          platforms: linux/amd64,linux/arm64  # 构建多架构镜像（x86/ARM）
+          pull: true  # 拉取最新基础镜像
 
-      # 步骤7：（可选）镜像测试（启动容器并验证）
+      # 步骤6：（可选）镜像测试（启动容器验证可用性）
       - name: Test Docker image
+        if: ${{ secrets.BOT_TOKEN != '' && secrets.API_ID != '' && secrets.API_HASH != '' }}
         run: |
           # 启动测试容器
           docker run -d \
@@ -71,6 +63,7 @@ jobs:
             -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
             -e API_ID=${{ secrets.API_ID }} \
             -e API_HASH=${{ secrets.API_HASH }} \
+            -e DOMAIN="https://test.example.com" \
             -p 5000:5000 \
             ${{ steps.set_tags.outputs.tags }}
           
@@ -78,12 +71,15 @@ jobs:
           sleep 10
           
           # 验证容器是否运行
-          if [ $(docker inspect -f '{{.State.Running}}' telegram-bot-test) != "true" ]; then
-            echo "容器启动失败"
-            docker logs telegram-bot-test
+          CONTAINER_STATUS=$(docker inspect -f '{{.State.Running}}' telegram-bot-test 2>/dev/null || "false")
+          if [ "$CONTAINER_STATUS" != "true" ]; then
+            echo "❌ 容器启动失败，日志如下："
+            docker logs telegram-bot-test || echo "无日志输出"
             exit 1
           fi
           
-          # 停止并删除测试容器
-          docker stop telegram-bot-test
-          docker rm telegram-bot-test
+          echo "✅ 容器启动成功，测试通过"
+          
+          # 清理测试容器
+          docker stop telegram-bot-test >/dev/null 2>&1
+          docker rm telegram-bot-test >/dev/null 2>&1
