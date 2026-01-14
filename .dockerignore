@@ -1,0 +1,10 @@
+# 忽略无用文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.git/
+.gitignore
+*.log
+data/  # 数据卷挂载，无需打包进镜像

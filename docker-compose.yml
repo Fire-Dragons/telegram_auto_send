@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  telegram-scheduler:
+    build: .
+    container_name: telegram-scheduler
+    restart: always  # 容器崩溃自动重启
+    ports:
+      - "5000:5000"  # 宿主机端口:容器端口
+    environment:
+      # 从宿主机 .env 文件注入环境变量
+      - BOT_TOKEN=${BOT_TOKEN}
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+      - BOT_USERNAME=${BOT_USERNAME}
+      - FLASK_HOST=0.0.0.0  # 容器内必须监听 0.0.0.0
+      - FLASK_PORT=5000
+      - DOMAIN=${DOMAIN}
+      - MESSAGE_LIMIT=${MESSAGE_LIMIT}
+      - GROUP_MSG_LIMIT=${GROUP_MSG_LIMIT}
+      - LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS}
+    volumes:
+      # 数据卷挂载：宿主机目录:容器目录（持久化关键数据）
+      - ./data/user_sessions:/app/data/user_sessions
+      - ./data/user_media:/app/data/user_media
+      - ./data/logs:/app/data/logs
+      # 挂载配置文件（实时修改无需重启容器）
+      - ./banned_keywords.txt:/app/banned_keywords.txt
+      - ./static:/app/static
+    # 资源限制（防止容器占用过多资源）
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1024M

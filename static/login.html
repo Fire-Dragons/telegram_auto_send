@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Telegram 扫码登录 - 定时消息系统</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .upload-area {
+            margin-top: 30px;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+        }
+        #status, #uploadStatus, #mediaUploadStatus {
+            margin-top: 20px;
+            color: #666;
+        }
+        .agreement {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #999;
+        }
+        .agreement a {
+            color: #0088cc;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>📱 Telegram 账号授权</h1>
+    <p>请扫码完成授权，然后上传你的Session文件</p>
+    
+    <!-- Telegram官方扫码登录组件 -->
+    <script async src="https://telegram.org/js/telegram-widget.js?22"
+            data-telegram-login="{{ bot_username }}"
+            data-size="large"
+            data-auth-url="/auth"
+            data-request-access="write"></script>
+
+    <!-- 用户协议 -->
+    <div class="agreement">
+        <p>点击授权即表示你同意<a href="/privacy" target="_blank">《隐私政策》</a>，我们不会收集你的手机号、验证码、二级密码等敏感信息</p>
+    </div>
+
+    <!-- Session文件上传区域 -->
+    <div class="upload-area" id="uploadArea" style="display: none;">
+        <h3>📤 上传你的Session文件</h3>
+        <p>请先本地运行登录脚本生成session文件，再上传</p>
+        <input type="file" id="sessionFile" accept=".session">
+        <button onclick="uploadFile()">上传</button>
+        <p id="uploadStatus"></p>
+        
+        <!-- 本地登录脚本示例 -->
+        <div style="margin-top: 20px; text-align: left; font-size: 14px;">
+            <h4>本地登录脚本（生成session文件）：</h4>
+            <pre id="loginScript">
+from pyrogram import Client
+
+# 替换为你的API信息
+API_ID = {{ api_id }}
+API_HASH = "{{ api_hash }}"
+USER_ID = "{{ user_id }}"  # 替换为你的Telegram用户ID
+
+# 初始化客户端（支持两步验证）
+client = Client(
+    name=f"user_{USER_ID}",
+    api_id=API_ID,
+    api_hash=API_HASH
+)
+
+with client:
+    print("✅ 登录成功！已生成 session 文件：user_{USER_ID}.session")
+            </pre>
+        </div>
+    </div>
+
+    <!-- 媒体文件上传区域 -->
+    <div class="upload-area" id="mediaUploadArea" style="margin-top: 30px; display: none;">
+        <h3>🖼️ 上传媒体文件（可选）</h3>
+        <input type="file" id="mediaFile">
+        <button onclick="uploadMedia()">上传媒体</button>
+        <p id="mediaUploadStatus"></p>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        // 存储授权后的用户ID
+        let userId = "";
+
+        // 监听授权回调（从URL参数获取用户ID）
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const user_id = urlParams.get('user_id');
+            if (user_id) {
+                userId = user_id;
+                document.getElementById('uploadArea').style.display = 'block';
+                document.getElementById('mediaUploadArea').style.display = 'block';
+                // 替换脚本中的用户ID
+                const scriptText = document.getElementById('loginScript').innerText
+                    .replace("{{ user_id }}", user_id)
+                    .replace("{{ api_id }}", "{{ api_id }}")
+                    .replace("{{ api_hash }}", "{{ api_hash }}");
+                document.getElementById('loginScript').innerText = scriptText;
+            }
+        };
+
+        // 上传Session文件
+        function uploadFile() {
+            const fileInput = document.getElementById('sessionFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                document.getElementById('uploadStatus').innerText = "❌ 请选择session文件";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('session_file', file);
+            formData.append('user_id', userId);
+
+            fetch('/upload_session', {
+                method: 'POST',
+                body: formData
+            }).then(response => response.json())
+              .then(data => {
+                  if (data.success) {
+                      document.getElementById('uploadStatus').innerText = "✅ 上传成功！现在可以回到Telegram机器人使用功能";
+                  } else {
+                      document.getElementById('uploadStatus').innerText = "❌ 上传失败：" + data.message;
+                  }
+              }).catch(error => {
+                  document.getElementById('uploadStatus').innerText = "❌ 网络错误：" + error;
+              });
+        }
+
+        // 上传媒体文件
+        function uploadMedia() {
+            const fileInput = document.getElementById('mediaFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                document.getElementById('mediaUploadStatus').innerText = "❌ 请选择媒体文件";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('media_file', file);
+            formData.append('user_id', userId);
+
+            fetch('/upload_media', {
+                method: 'POST',
+                body: formData
+            }).then(response => response.json())
+              .then(data => {
+                  if (data.success) {
+                      document.getElementById('mediaUploadStatus').innerText = "✅ 媒体上传成功！文件ID：" + data.filename;
+                  } else {
+                      document.getElementById('mediaUploadStatus').innerText = "❌ 上传失败：" + data.message;
+                  }
+              }).catch(error => {
+                  document.getElementById('mediaUploadStatus').innerText = "❌ 网络错误：" + error;
+              });
+        }
+    </script>
+</body>
+</html>
