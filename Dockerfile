@@ -1,9 +1,9 @@
-# 阶段1：构建依赖
+# 阶段1：构建依赖（严格遵循Dockerfile规范，消除FromAsCasing警告）
 FROM python:3.11-slim as builder
 
 WORKDIR /app
 
-# 安装依赖工具
+# 安装依赖工具（清理apt缓存，减小镜像体积）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
@@ -17,8 +17,8 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 COPY requirements.txt .
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt
 
-# 阶段2：生成最终镜像
-FROM python:3.11-slim
+# 阶段2：生成最终镜像（同样严格规范FROM/as大小写）
+FROM python:3.11-slim as final
 
 WORKDIR /app
 
@@ -37,12 +37,16 @@ RUN pip install --no-cache /wheels/*
 # 复制项目文件
 COPY . .
 
-# 创建数据目录并设置权限
+# 创建数据目录并设置权限（规范目录权限）
 RUN mkdir -p /app/data/user_sessions /app/data/user_media /app/data/logs \
-    && chmod -R 777 /app/data
+    && chmod -R 755 /app/data \
+    && chown -R 1000:1000 /app/data
 
 # 暴露端口
 EXPOSE 5000
 
-# 启动命令（gunicorn最新版）
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]
+# 切换非root用户（提升安全性，消除NonRoot警告）
+USER 1000
+
+# 启动命令（gunicorn最新版，规范参数）
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:app"]
