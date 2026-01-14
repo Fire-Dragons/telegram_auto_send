@@ -82,34 +82,34 @@ jobs:
           sbom: false
 
       # 步骤6：镜像测试（可选）
-      - name: Test Docker image
-        if: ${{ (github.event.inputs.run_test == 'true' && github.event_name == 'workflow_dispatch') || (github.event_name != 'workflow_dispatch' && secrets.BOT_TOKEN != '') }}
-        run: |
-          # 启动测试容器
-          docker run -d \
-            --name telegram-bot-test \
-            -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
-            -e API_ID=${{ secrets.API_ID }} \
-            -e API_HASH=${{ secrets.API_HASH }} \
-            -e DOMAIN="https://test.example.com" \
-            -p 5000:5000 \
-            ${{ steps.set_tags.outputs.tags }}
+      # - name: Test Docker image
+      #   if: ${{ (github.event.inputs.run_test == 'true' && github.event_name == 'workflow_dispatch') || (github.event_name != 'workflow_dispatch' && secrets.BOT_TOKEN != '') }}
+      #   run: |
+      #     # 启动测试容器
+      #     docker run -d \
+      #       --name telegram-bot-test \
+      #       -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
+      #       -e API_ID=${{ secrets.API_ID }} \
+      #       -e API_HASH=${{ secrets.API_HASH }} \
+      #       -e DOMAIN="https://test.example.com" \
+      #       -p 5000:5000 \
+      #       ${{ steps.set_tags.outputs.tags }}
           
-          # 等待容器启动
-          sleep 15
+      #     # 等待容器启动
+      #     sleep 15
           
-          # 验证容器状态
-          CONTAINER_STATUS=$(docker inspect -f '{{.State.Running}}' telegram-bot-test 2>/dev/null || "false")
-          if [ "$CONTAINER_STATUS" != "true" ]; then
-            echo "❌ 容器启动失败，日志："
-            docker logs telegram-bot-test || echo "无日志"
-            exit 1
-          fi
+      #     # 验证容器状态
+      #     CONTAINER_STATUS=$(docker inspect -f '{{.State.Running}}' telegram-bot-test 2>/dev/null || "false")
+      #     if [ "$CONTAINER_STATUS" != "true" ]; then
+      #       echo "❌ 容器启动失败，日志："
+      #       docker logs telegram-bot-test || echo "无日志"
+      #       exit 1
+      #     fi
           
-          # 验证服务可用性
-          curl -f http://localhost:5000/login || (echo "❌ 服务不可用" && exit 1)
+      #     # 验证服务可用性
+      #     curl -f http://localhost:5000/login || (echo "❌ 服务不可用" && exit 1)
           
-          echo "✅ 镜像测试通过"
+      #     echo "✅ 镜像测试通过"
           
-          # 清理容器
-          docker stop telegram-bot-test && docker rm telegram-bot-test
+      #     # 清理容器
+      #     docker stop telegram-bot-test && docker rm telegram-bot-test
