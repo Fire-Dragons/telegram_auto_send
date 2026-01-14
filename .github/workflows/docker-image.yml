@@ -1,6 +1,5 @@
 name: Build and Push Docker Image (Latest Dependencies)
 
-# 触发条件：手动+自动
 on:
   workflow_dispatch:
     inputs:
@@ -30,30 +29,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 步骤1：拉取代码（最新版）
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 步骤2：设置Docker Buildx（最新版，支持多架构）
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          version: latest  # 使用最新版Buildx
+          version: latest
 
-      # 步骤3：登录Docker Hub（最新版）
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      # 步骤4：设置镜像标签
       - name: Set image tags
         id: set_tags
         run: |
           BASE_TAG="${{ secrets.DOCKER_HUB_USERNAME }}/telegram-bot"
           
-          # 区分手动/自动触发
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             TAG="${{ github.event.inputs.image_tag }}"
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
@@ -65,7 +59,6 @@ jobs:
           echo "tags=${BASE_TAG}:${TAG}" >> $GITHUB_OUTPUT
           echo "platforms=${{ github.event.inputs.build_platform || 'linux/amd64,linux/arm64' }}" >> $GITHUB_OUTPUT
 
-      # 步骤5：构建并推送镜像（最新版，支持缓存优化）
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -73,43 +66,45 @@ jobs:
           push: true
           tags: ${{ steps.set_tags.outputs.tags }}
           platforms: ${{ steps.set_tags.outputs.platforms }}
-          # 高级缓存配置（加速构建）
-          cache-from: type=registry,ref=${{ steps.set_tags.outputs.tags }}:buildcache
-          cache-to: type=registry,ref=${{ steps.set_tags.outputs.tags }}:buildcache,mode=max
-          # 构建优化
+          cache-from: type=registry,ref=${{ steps.set_tags.outputs.tags }}
+          cache-to: type=inline
           pull: true
-          provenance: false  # 关闭溯源，减小镜像体积
+          provenance: false
           sbom: false
 
-      # 步骤6：镜像测试（可选）
-      # - name: Test Docker image
-      #   if: ${{ (github.event.inputs.run_test == 'true' && github.event_name == 'workflow_dispatch') || (github.event_name != 'workflow_dispatch' && secrets.BOT_TOKEN != '') }}
-      #   run: |
-      #     # 启动测试容器
-      #     docker run -d \
-      #       --name telegram-bot-test \
-      #       -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
-      #       -e API_ID=${{ secrets.API_ID }} \
-      #       -e API_HASH=${{ secrets.API_HASH }} \
-      #       -e DOMAIN="https://test.example.com" \
-      #       -p 5000:5000 \
-      #       ${{ steps.set_tags.outputs.tags }}
+      # 核心修复：完善if条件，同时检查run_test和密钥是否存在
+      - name: Test Docker image
+        # 条件：手动触发且run_test=true 且 所有测试密钥都存在；或自动触发且密钥存在
+        if: ${{ 
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.run_test == 'true' && secrets.BOT_TOKEN != '' && secrets.API_ID != '' && secrets.API_HASH != '') 
+          || 
+          (github.event_name != 'workflow_dispatch' && secrets.BOT_TOKEN != '' && secrets.API_ID != '' && secrets.API_HASH != '') 
+        }}
+        run: |
+          # 启动测试容器
+          docker run -d \
+            --name telegram-bot-test \
+            -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
+            -e API_ID=${{ secrets.API_ID }} \
+            -e API_HASH=${{ secrets.API_HASH }} \
+            -e DOMAIN="https://test.example.com" \
+            -p 5000:5000 \
+            ${{ steps.set_tags.outputs.tags }}
           
-      #     # 等待容器启动
-      #     sleep 15
+          sleep 15
           
-      #     # 验证容器状态
-      #     CONTAINER_STATUS=$(docker inspect -f '{{.State.Running}}' telegram-bot-test 2>/dev/null || "false")
-      #     if [ "$CONTAINER_STATUS" != "true" ]; then
-      #       echo "❌ 容器启动失败，日志："
-      #       docker logs telegram-bot-test || echo "无日志"
-      #       exit 1
-      #     fi
+          # 验证容器状态
+          CONTAINER_STATUS=$(docker inspect -f '{{.State.Running}}' telegram-bot-test 2>/dev/null || "false")
+          if [ "$CONTAINER_STATUS" != "true" ]; then
+            echo "❌ 容器启动失败，日志："
+            docker logs telegram-bot-test || echo "无日志"
+            exit 1
+          fi
           
-      #     # 验证服务可用性
-      #     curl -f http://localhost:5000/login || (echo "❌ 服务不可用" && exit 1)
+          # 验证服务可用性
+          curl -f http://localhost:5000/login || (echo "❌ 服务不可用" && exit 1)
           
-      #     echo "✅ 镜像测试通过"
+          echo "✅ 镜像测试通过"
           
-      #     # 清理容器
-      #     docker stop telegram-bot-test && docker rm telegram-bot-test
+          # 清理容器
+          docker stop telegram-bot-test && docker rm telegram-bot-test
