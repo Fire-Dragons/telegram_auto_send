@@ -167,6 +167,6 @@ docker run -d \
 
 - 容器更新：先停止旧容器 → 拉取新镜像 → 启动新容器
 `docker stop telegram-bot && docker rm telegram-bot
-docker pull 你的用户名/telegram-bot:latest
+docker pull firedragons/telegram-bot:latest
 # 重新执行启动命令`
 > （注：文档部分内容可能由 AI 生成）
