@@ -72,10 +72,32 @@ jobs:
           provenance: false
           sbom: false
 
-      # 关键修复：将长条件拆分为单行，确保YAML解析正常（第75行左右）
+      # 核心修复：移除复杂的if条件，改为Shell脚本内判断（彻底避开secrets解析问题）
       - name: Test Docker image
-        if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.run_test == 'true' && secrets.BOT_TOKEN != '' && secrets.API_ID != '' && secrets.API_HASH != '') || (github.event_name != 'workflow_dispatch' && secrets.BOT_TOKEN != '' && secrets.API_ID != '' && secrets.API_HASH != '') }}
         run: |
+          # 定义测试开关：判断是否需要执行测试
+          RUN_TEST="false"
+          
+          # 手动触发场景：检查run_test参数和密钥是否存在
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.event.inputs.run_test }}" == "true" && -n "${{ secrets.BOT_TOKEN }}" && -n "${{ secrets.API_ID }}" && -n "${{ secrets.API_HASH }}" ]]; then
+              RUN_TEST="true"
+            fi
+          # 自动触发场景：检查密钥是否存在
+          else
+            if [[ -n "${{ secrets.BOT_TOKEN }}" && -n "${{ secrets.API_ID }}" && -n "${{ secrets.API_HASH }}" ]]; then
+              RUN_TEST="true"
+            fi
+          fi
+          
+          # 若不需要测试，直接退出
+          if [[ "$RUN_TEST" != "true" ]]; then
+            echo "⚠️ 测试条件不满足（未配置密钥或取消测试），跳过镜像测试"
+            exit 0
+          fi
+          
+          # 执行测试（仅当条件满足时）
+          echo "✅ 开始镜像测试..."
           docker run -d \
             --name telegram-bot-test \
             -e BOT_TOKEN=${{ secrets.BOT_TOKEN }} \
@@ -87,6 +109,7 @@ jobs:
           
           sleep 15
           
+          # 验证容器状态
           CONTAINER_STATUS=$(docker inspect -f '{{.State.Running}}' telegram-bot-test 2>/dev/null || "false")
           if [ "$CONTAINER_STATUS" != "true" ]; then
             echo "❌ 容器启动失败，日志："
@@ -94,7 +117,5 @@ jobs:
             exit 1
           fi
           
-          # 仅检查容器启动，不验证/login接口（避免无前端页面导致的curl失败）
           echo "✅ 容器启动成功，测试通过"
-          
           docker stop telegram-bot-test && docker rm telegram-bot-test
